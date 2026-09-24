@@ -1,4 +1,4 @@
-#lang typed/racket
+ #lang typed/racket
 
 (require typed/rackunit)
 
@@ -7,8 +7,7 @@
 (define (parse000 [s : Sexp]) : Boolean
   (match s
     [(list r 'chris sym) (and(real? r) (symbol? sym)) #t]
-    [other #f]
-    ))
+    [other #f]))
 
 (check-equal? (parse000 '(1 chris a)) #t)
 (check-equal? (parse000 '("one")) #f)
@@ -17,12 +16,11 @@
 ; this does the same thing as parse001 but has two return types
 (define (parse001 [s : Sexp]) : (U Boolean Symbol)
   (match s
-    [(list r 'chris sym)
-     (cond [
+    [(list (? real? r) 'chris (? symbol? sym)) sym]
+#;     (cond [
             (and(real? r) (symbol? sym)) sym]
-           [else #f])]
-    [other #f]
-    ))
+           [else #f])
+    [other #f]))
 
 (check-equal? (parse001 '(1 chris a)) 'a)
 (check-equal? (parse001 '(1 chris 2)) #f)
@@ -35,10 +33,8 @@
 
 (define (parse002 [s : Sexp]) : (U Boolean (Listof Real))
   (match s
-    [(list a l b)
-         (cond
-           [(and (list? l) (andmap real? l)) l]
-           [else #f])]
+    [(list a (list (? real? r)...) b) (cast r (Listof Real))]
+           ;[else #f])]
      ; NOT in form a list b
      [other #f]
    ))
@@ -54,16 +50,10 @@
 
 (define (parse003 [s : Sexp]) : (U Boolean Real)
   (match s
-    [(list (list a b c) ...)
-    ;; the ellipses matches many repetitions of that sub pattern
-    ;; this didint work due to tr constraints
-    ;;  [(list (list (? real? a) (? real? b) (? real? c)) ...)
-
-     ; can a b c be mapped to reals?
-     (if (and (andmap real? a) (andmap real? b) (andmap real? c))
-         (- (apply + (cast a (Listof Real)))
+    [(list (list (? real? a) (? real? b) (? real? c)) ...)
+     (- (apply + (cast a (Listof Real)))
             (apply + (cast c (Listof Real))))
-         #f)]
+     ]
     [other #f]))
 
 
@@ -72,3 +62,42 @@
 (check-equal? (parse003 (list (list 4 5 6) (list 9 8 2))) 5)
 (check-equal? (parse003 (list (list 4 2 4) (list 6 8 2))) 4)
 (check-equal? (parse003 (list (list 4 5 6) (list 9 "hello" 2))) #f)
+
+
+
+(define (ohno [n : Sexp]) : (U Symbol)
+  (match n
+    [(? real? n) 'okay]
+    [other (error 'ohno "expected real, got ~e" n)]
+    )
+  )
+
+(check-equal? (ohno 1) 'okay)
+(check-exn (regexp (regexp-quote "ohno: expected real, got \"help\""))
+           (lambda () (ohno "help")))
+
+
+
+(struct plusC ([l : ArithC] [r : ArithC]) #:transparent)
+(struct multC ([l : ArithC] [r : ArithC]) #:transparent)
+(struct numC ([n : Number]) #:transparent)
+
+(define-type ArithC (U plusC numC multC))
+;(define-type ArithC
+  ;[numC (n : number)]
+  ;[plusC (l : ArithC) (r : ArithC)]
+  ;[multC (l : ArithC) (r : ArithC)])
+
+
+(define (interp [a : ArithC]) : Number
+  (match a
+    [(plusC l r) (+ (interp l) (interp r))]
+    [(multC l r) (* (interp l) (interp r))]
+    [(numC n) n]))
+
+(check-equal? (interp (numC 3))3)
+
+(check-equal? (interp (multC (numC 3) (numC 9))) 27)
+
+(check-equal? (interp (plusC (numC 3) (numC 9))) 12)
+
