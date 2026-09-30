@@ -81,17 +81,17 @@
 
 
 ; finds and interprets the function main
-
 (define (interp-fns [l : (Listof FundefC)]) : Real
-  (interp (find-fns l 'main) l))
+  (match (find-fns l 'main)
+    [(FundefC n p b) (interp b l)]))
 
 ;helper function for interp-fns
 
-(define (find-fns [l : (Listof FundefC)] [s : Symbol]) : ExprC
+(define (find-fns [l : (Listof FundefC)] [s : Symbol]) : FundefC
   (match l
     ['() (error 'interp-fns "DRMG could not find main")];throw an error here
     [(cons (FundefC n p b) r) (cond
-                                [(eq? n s) b]
+                                [(eq? n s) (FundefC n p b)]
                                 [else (find-fns r s)])]))
 
 ; uses the list of funs to interpret all the expressions
@@ -102,11 +102,10 @@
     [(? real? n) n]
     [(BinopC s l r) (binop s (interp l funs) (interp r funs))]
     [(IfC c t f) (cond [(<= (interp c funs) 0) (interp t funs)] [else (interp f funs)])]
-    ;AppC does not work in interp and subst because it is a list of args rather than just one
     [(AppC f a) (match (find-fns funs f)
               [(FundefC _ p b) 
-               (define arg-values (map (lambda (arg) (interp arg funs)) a))
-               (define new_body (subst p arg-values b))
+               (define argv (map (lambda ([arg : ExprC]) (interp arg funs)) a))
+               (define new_body (subst p argv b))
                (interp new_body funs)])]))
 
 ; helper function of interp, matches symbol in binop and evaluates correct arithmetic
@@ -216,3 +215,12 @@
 (check-equal? (subst (list 'x) (list 5) (BinopC '+ 2 3)) (BinopC '+ 2 3))
 
 (check-equal? (subst (list 'x) (list 5) 8) 8)
+
+;f un c within func
+;(check-equal? (interp (AppC 'add (list (BinopC '+ 1 2) 5))
+;                      (list (FundefC 'add (list 'x 'y) (BinopC '+ 'x 'y))))
+;             8)
+
+(check-equal? (interp (AppC 'add (list 3 4))
+                      (list (FundefC 'add (list 'x 'y) (BinopC '+ 'x 'y))))
+              7)
