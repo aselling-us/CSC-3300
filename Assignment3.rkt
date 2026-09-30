@@ -139,7 +139,9 @@
     ))
 
 
-; how to recursive call on the list of arguments in ‘a. There is the same problem in interp, if we can figure that out everything should work
+(define (top-interp [s : Sexp]) : Real
+  (interp-fns (parse-prog s)))
+
 
 
 
@@ -205,7 +207,8 @@
 (check-equal? (subst (list 'x) (list 5) (BinopC '+ 'x 3)) (BinopC '+ 5 3))
 (check-equal? (subst (list 'x 'y) (list 5 2) (BinopC '* 'x 'y)) (BinopC '* 5 2))
 ; param synbol not exist
-(check-exn (regexp (regexp-quote "find-param: symbol not found")) (lambda () (subst (list 'x 'y) (list 5 10) (BinopC '+ 'x 'z))))
+(check-exn (regexp (regexp-quote "find-param: symbol not found"))
+           (lambda () (subst (list 'x 'y) (list 5 10) (BinopC '+ 'x 'z))))
 
 ; substr ifC
 (check-equal? (subst (list 'x) (list 0) (IfC 'x 10 20)) (IfC 0 10 20))
@@ -224,3 +227,6 @@
 (check-equal? (interp (AppC 'add (list 3 4))
                       (list (FundefC 'add (list 'x 'y) (BinopC '+ 'x 'y))))
               7)
+
+; top interp
+(check-equal? (top-interp '{{add7 a = {+ a 7}} {main = {add7 3}}}) 10)
