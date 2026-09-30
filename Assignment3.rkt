@@ -100,34 +100,46 @@
   (match exp
     [(? symbol? s) (error 'interp "DRMG unknown symbol in expression")]
     [(? real? n) n]
-    [(BinopC s l r) (Binop s (interp l funs) (interp r funs))]
+    [(BinopC s l r) (binop s (interp l funs) (interp r funs))]
     [(IfC c t f) (cond [(<= (interp c funs) 0) (interp t funs)] [else (interp f funs)])]
     ;AppC does not work in interp and subst because it is a list of args rather than just one
     [(AppC f a) (match (find-fns funs f)
-                  [(FundefC _ p b) (define new_body (subst p (interp a funs) b))
-                                   (interp new_body funs)])]))
+              [(FundefC _ p b) 
+               (define arg-values (map (lambda (arg) (interp arg funs)) a))
+               (define new_body (subst p arg-values b))
+               (interp new_body funs)])]))
 
 ; helper function of interp, matches symbol in binop and evaluates correct arithmetic
 
-(define (Binop [s : Symbol] [l : Real] [r : Real]) : Real
+(define (binop [s : Symbol] [l : Real] [r : Real]) : Real
   (match s
     ['+ (+ l r)]
     ['- (- l r)]
     ['* (* l r)]
     ['/ (/ l r)]))
 
+
+; helper for subst
+; find 
+(define (find-param [s : Symbol] [params : (Listof Symbol)] [args : (Listof Real)]) : Real
+  (match (list params args)
+    [(list (cons pf pr) (cons af ar))
+     (if (eq? s pf) af (find-param s pr ar))]
+    [_ (error 'find-param "symbol not found")]))
 ;substitues every occurence of a symbol in the first tree with the second tree
 
-(define (subst [p : (Listof Symbol)] [r : Real] [expr : ExprC]) : ExprC
+
+
+(define (subst [p : (Listof Symbol)] [r : (Listof Real)] [expr : ExprC]) : ExprC
   (match expr
-    [(? symbol? s) (cond
-                     [(eq? p s) r]
-                     [else s])]
+    [(? symbol? s) (find-param s p r)]
     [(? real? n) n]
     [(BinopC s l r2) (BinopC s (subst p r l) (subst p r r2))]
     [(IfC c t f) (IfC (subst p r c) (subst p r t) (subst p r f))]
-    ;[(AppC f a) (AppC f (map subst p r a))]
+    [(AppC f a) (AppC f (map (lambda ([arg : ExprC]) (subst p r arg)) a))]
     ))
+
+
 ; how to recursive call on the list of arguments in ‘a. There is the same problem in interp, if we can figure that out everything should work
 
 
@@ -187,3 +199,20 @@
 ;(check-equal? (interp-fns (list (FundefC 'pow (list 'a 'b) (IfC 'b 1
 ;                                              (AppC 'pow (list 'a (BinopC '- 'b 1)))))
 ;                    (FundefC 'main '() (AppC 'pow (list 3 4))))) 0)
+
+; cases for substr
+; form list params list values exprc
+
+(check-equal? (subst (list 'x) (list 5) (BinopC '+ 'x 3)) (BinopC '+ 5 3))
+(check-equal? (subst (list 'x 'y) (list 5 2) (BinopC '* 'x 'y)) (BinopC '* 5 2))
+; param synbol not exist
+(check-exn (regexp (regexp-quote "find-param: symbol not found")) (lambda () (subst (list 'x 'y) (list 5 10) (BinopC '+ 'x 'z))))
+
+; substr ifC
+(check-equal? (subst (list 'x) (list 0) (IfC 'x 10 20)) (IfC 0 10 20))
+; appc substr
+(check-equal? (subst (list 'x 'y) (list 3 4) (AppC 'add (list 'x 'y))) (AppC 'add (list 3 4)))
+; param not in exprc
+(check-equal? (subst (list 'x) (list 5) (BinopC '+ 2 3)) (BinopC '+ 2 3))
+
+(check-equal? (subst (list 'x) (list 5) 8) 8)
