@@ -2,6 +2,8 @@
 
 (require typed/rackunit)
 
+;Full project implemented
+
 ;(struct NumC ([n : Real]) #:transparent)
 
 (struct BinopC ([o : OpC] [l : ExprC] [r : ExprC]) #:transparent)
@@ -28,7 +30,8 @@
 
 (struct ProgC ([fun : (Listof FundefC)]))
 
-;parser for expressions in DMRG3, takes in the concrete syntax (a sexp from dmrg) and returns the abstract syntax
+;parser for expressions in DMRG3,
+;takes in the concrete syntax (a sexp from dmrg) and returns the abstract syntax
 
 (define (parse [s : Sexp]) : ExprC
   (match s
@@ -55,13 +58,6 @@
        [else (FundefC s (cast p (Listof Symbol)) (parse b))])]
     [other (error 'parse-fundef "DRMG not a function, got ~e" s)]))
 
-;helper function for parse-fundef and parse-prog and that checks if any symbols in a list share a name
-
-(define (symbol-dup? [l : (Listof Symbol)]) : Boolean
-  (match l
-    ['() #f]
-    [(cons f r) (or (and (not (empty? r)) (eq? f (first r))) (symbol-dup? r))]))
-
 
 ;parser for the program in DRMG3, this takes in the concrete syntax and returns the abstract syntax
 
@@ -73,26 +69,11 @@
                     [(not (fun-dup? result)) result]
                     [else (error 'parse-prog "DRMG duplicate functions, got ~e" s)])]))
 
-;helper function for parse-prog that checks if any functions share a name
-;just converts the names to symbols and uses symbol-dup?
-
-(define (fun-dup? [l : (Listof FundefC)]) : Boolean
-  (symbol-dup? (map FundefC-name l)))
-
-
 ; finds and interprets the function main
+
 (define (interp-fns [l : (Listof FundefC)]) : Real
   (match (find-fns l 'main)
     [(FundefC n p b) (interp b l)]))
-
-;helper function for interp-fns
-
-(define (find-fns [l : (Listof FundefC)] [s : Symbol]) : FundefC
-  (match l
-    ['() (error 'interp-fns "DRMG could not find main")];throw an error here
-    [(cons (FundefC n p b) r) (cond
-                                [(eq? n s) (FundefC n p b)]
-                                [else (find-fns r s)])]))
 
 ; uses the list of funs to interpret all the expressions
 
@@ -108,6 +89,35 @@
                (define new_body (subst p argv b))
                (interp new_body funs)])]))
 
+; top interp of the program, converts concrete syntax to a result
+
+(define (top-interp [s : Sexp]) : Real
+  (interp-fns (parse-prog s)))
+
+;helper functions
+
+;helper function for parse-fundef and parse-prog that checks if any symbols in a list share a name
+
+(define (symbol-dup? [l : (Listof Symbol)]) : Boolean
+  (match l
+    ['() #f]
+    [(cons f r) (or (and (not (empty? r)) (eq? f (first r))) (symbol-dup? r))]))
+
+;helper function for parse-prog that checks if any functions share a name
+;just converts the names to symbols and uses symbol-dup?
+
+(define (fun-dup? [l : (Listof FundefC)]) : Boolean
+  (symbol-dup? (map FundefC-name l)))
+
+;helper function for interp-fns
+
+(define (find-fns [l : (Listof FundefC)] [s : Symbol]) : FundefC
+  (match l
+    ['() (error 'interp-fns "DRMG could not find main")];throw an error here
+    [(cons (FundefC n p b) r) (cond
+                                [(eq? n s) (FundefC n p b)]
+                                [else (find-fns r s)])]))
+
 ; helper function of interp, matches symbol in binop and evaluates correct arithmetic
 
 (define (binop [s : Symbol] [l : Real] [r : Real]) : Real
@@ -119,15 +129,15 @@
 
 
 ; helper for subst
-; find 
+; finds the parameters to substitute
+
 (define (find-param [s : Symbol] [params : (Listof Symbol)] [args : (Listof Real)]) : Real
   (match (list params args)
     [(list (cons pf pr) (cons af ar))
      (if (eq? s pf) af (find-param s pr ar))]
-    [_ (error 'find-param "symbol not found")]))
+    [_ (error 'find-param "DRMG symbol not found")]))
+
 ;substitues every occurence of a symbol in the first tree with the second tree
-
-
 
 (define (subst [p : (Listof Symbol)] [r : (Listof Real)] [expr : ExprC]) : ExprC
   (match expr
@@ -139,12 +149,8 @@
     ))
 
 
-(define (top-interp [s : Sexp]) : Real
-  (interp-fns (parse-prog s)))
 
-
-
-
+;test cases for parse
 (check-equal? (parse 3) 3)
 (check-equal? (parse 'a) 'a)
 (check-equal? (parse '{+ a 7}) (BinopC '+ 'a 7))
@@ -157,7 +163,7 @@
 (check-exn (regexp (regexp-quote "parse: DRMG invalid id, got '->"))
            (lambda () (parse '{-> 3 4})))
 
-
+;test cases for parse-fundef
 (check-equal? (parse-fundef '{add7 a = {+ a 7}}) (FundefC 'add7 (list 'a) (BinopC '+ 'a 7)))
 (check-equal? (parse-fundef '{main = {add7 3}}) (FundefC 'main '() (AppC 'add7 (list 3))))
 (check-equal? (parse-fundef '{pow a b = {ifleq0? b 1 {pow a {- b 1}}}})
@@ -168,7 +174,7 @@
 (check-exn (regexp (regexp-quote "parse-fundef: DRMG duplicate parameters, got '(a a)"))
            (lambda () (parse-fundef '{add2 a a = {+ a a}})))
 
-
+;test cases for parse-prog
 (check-equal? (parse-prog '{}) '())
 (check-equal?
  (parse-prog '{{pow a b = {ifleq0? b 1 {pow a {- b 1}}}} {main = {pow 3 4}}})
@@ -179,8 +185,7 @@
  (regexp(regexp-quote "parse-prog: DRMG duplicate functions, got '((add2 a = a) (add2 c = c))"))
  (lambda () (parse-prog '{{add2 a = a} {add2 c = c}})))
 
-;interp and subst are not finished yet
-
+;test cases for interp-fns
 (check-equal? (interp-fns (list (FundefC 'main '() (BinopC '+ 3 4)))) 7)
 (check-equal? (interp-fns (list (FundefC 'main '() (BinopC '- 3 4)))) -1)
 (check-equal? (interp-fns (list (FundefC 'main '() (BinopC '* 3 4)))) 12)
@@ -197,17 +202,16 @@
  (regexp(regexp-quote "interp: DRMG unknown symbol in expression"))
  (lambda () (interp-fns (list (FundefC 'main '() (BinopC '+ 'a 3))))))
 
-;(check-equal? (interp-fns (list (FundefC 'pow (list 'a 'b) (IfC 'b 1
-;                                              (AppC 'pow (list 'a (BinopC '- 'b 1)))))
-;                    (FundefC 'main '() (AppC 'pow (list 3 4))))) 0)
+(check-equal? (interp-fns (list (FundefC 'pow (list 'a 'b) (IfC 'b 1
+                                              (AppC 'pow (list 'a (BinopC '- 'b 1)))))
+                    (FundefC 'main '() (AppC 'pow (list 3 4))))) 1)
 
 ; cases for substr
 ; form list params list values exprc
-
 (check-equal? (subst (list 'x) (list 5) (BinopC '+ 'x 3)) (BinopC '+ 5 3))
 (check-equal? (subst (list 'x 'y) (list 5 2) (BinopC '* 'x 'y)) (BinopC '* 5 2))
 ; param synbol not exist
-(check-exn (regexp (regexp-quote "find-param: symbol not found"))
+(check-exn (regexp (regexp-quote "find-param: DRMG symbol not found"))
            (lambda () (subst (list 'x 'y) (list 5 10) (BinopC '+ 'x 'z))))
 
 ; substr ifC
@@ -219,10 +223,10 @@
 
 (check-equal? (subst (list 'x) (list 5) 8) 8)
 
-;f un c within func
-;(check-equal? (interp (AppC 'add (list (BinopC '+ 1 2) 5))
-;                      (list (FundefC 'add (list 'x 'y) (BinopC '+ 'x 'y))))
-;             8)
+;func within func
+(check-equal? (interp (AppC 'add (list (BinopC '+ 1 2) 5))
+                      (list (FundefC 'add (list 'x 'y) (BinopC '+ 'x 'y))))
+             8)
 
 (check-equal? (interp (AppC 'add (list 3 4))
                       (list (FundefC 'add (list 'x 'y) (BinopC '+ 'x 'y))))
@@ -230,3 +234,4 @@
 
 ; top interp
 (check-equal? (top-interp '{{add7 a = {+ a 7}} {main = {add7 3}}}) 10)
+(check-equal? (top-interp '{{pow a b = {ifleq0? b 1 {* a {pow a {- b 1}}}}} {main = {pow 3 4}}}) 81)
