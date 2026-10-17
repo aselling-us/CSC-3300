@@ -27,9 +27,7 @@
 (struct StrV ([s : String]) #:transparent)
 
 
-(struct StrC ([s : String]) #:transparent)
-
-(define-type ExprC (U Real Boolean IfC AppC Symbol LocalC LambdaC FundefC BinopC StrC))
+(define-type ExprC (U Real Boolean IfC AppC Symbol LocalC LambdaC FundefC BinopC String))
 
 (struct FundefC([name : Symbol] [param : (Listof Symbol)] [body : ExprC]) #:transparent)
 
@@ -71,7 +69,7 @@
   (match s
     [(? real? s) s]
     [(? boolean? s) s]
-    [(? string? s) (StrC s)]
+    [(? string? s) s]
     [(list '% p ... '-> b) (cond
                              [(symbol-dup? (cast p (Listof Symbol)))
                               (error 'parse "DRMG duplicate lambda parameters, got ~e" p)]
@@ -108,6 +106,7 @@
     [(? symbol? s) (find-param-env s env)]
     [(? real? n) (NumV n)]
     [(? boolean? b) (BoolV b)]
+    [(? string? s) (StrV s)]
     ;[(BinopC s l r) (binop s (interp l funs env) (interp r funs env))]
     [(IfC c t f) (match (interp c env)
                    [(BoolV #t) (interp t env)]
@@ -126,9 +125,10 @@
      [(PrimV v)
         (prim-eval v argv)])]
 
-     [(StrC s) (StrV s)]
+
     
     ))
+
 
 ; top interp of the program, converts concrete syntax to a result
 
@@ -179,7 +179,9 @@
     ['/ (cond
           [(zero? r) (error '/ "DRMG division by zero, got ~e ~e" l r)]
           [else (NumV (/ l r))])]
-    ['<= (BoolV (<= l r))]))
+    ['<= (BoolV (<= l r))]
+    
+ ))
 
 (define (prim-substring [s : String] [start : Real] [stop : Real])
   (if (and
@@ -197,6 +199,8 @@
     [else (error 'strlen "DRMG bad strlen arguments, got ~e, not a string " s)]
     ]
   )
+
+
 
 
 
@@ -281,7 +285,7 @@
 (check-equal? (interp (parse "\"hello\"") top-env)
               (StrV "\"hello\""))
 
-(check-equal? (interp (StrC "hi") top-env) (StrV "hi"))
+(check-equal? (interp "hi" top-env) (StrV "hi"))
 
 (check-equal? (serialize (interp (LambdaC (list 'a) 3) top-env)) "#<procedure>")
 
@@ -330,3 +334,11 @@
 (check-equal? (top-interp '{substring "hello" 1 3}) "\"el\"")
 (check-equal? (top-interp '{strlen "hello"}) "5")
 
+
+(check-exn
+ (regexp (regexp-quote "strlen: DRMG primitive strlen got wrong arguments"))
+ (lambda () (top-interp '{strlen 5})))
+
+(check-exn
+ (regexp (regexp-quote "substring: DRMG bad substring arguments"))
+ (lambda () (top-interp '{substring "" 0 2})))

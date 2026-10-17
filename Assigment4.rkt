@@ -62,8 +62,6 @@
                            (Binding 'false (PrimV 'false))
                            (Binding 'substring (PrimV 'substring))
                            (Binding 'strlen (PrimV 'strlen))
-                           (Binding 'equal? (PrimV 'equal?))
-                           (Binding 'error (PrimV 'error))
                            )))
 ;parser for expressions in DMRG3,
 ;takes in the concrete syntax (a sexp from dmrg) and returns the abstract syntax
@@ -82,19 +80,14 @@
                                                              (parse eb))
                                                     (map (lambda ([arg : Sexp]) (parse arg))
                                                          (cast e1 (Listof Sexp))))]
+    [(list 'if a b c) (IfC (parse a) (parse b) (parse c))]
     [(? symbol? s) (cond [(or
-                           ;(equal? s '+) (equal? s '-) (equal? s '*) (equal? s '/)
                            (equal? s 'if) (equal? s '->) (equal? s '=)
                            (equal? s '%) (equal? s 'local))
                           (error 'parse "DRMG invalid symbol, got ~e" s)]
                          [else s])]
-    ;[(list '+ a b) (BinopC '+ (parse a) (parse b))]
-    ;[(list '- a b) (BinopC '- (parse a) (parse b))]
-    ;[(list '* a b) (BinopC '* (parse a) (parse b))]
-    ;[(list '/ a b) (BinopC '/ (parse a) (parse b))]
-    ;[(list (and (? symbol?) (or '+ '- '* '/)) a b) (BinopC (cast (first s) OpC) (parse a) (parse b))]
-    [(list 'if a b c) (IfC (parse a) (parse b) (parse c))]
     [(list s a ...) (AppC (parse s) (map parse a))]
+    ;[_ (error 'parse "DRMG got wrong arguments, got ~e" s)]
     ))
 
 
@@ -109,7 +102,6 @@
     [(? real? n) (NumV n)]
     [(? boolean? b) (BoolV b)]
     [(? string? s) (StrV s)]
-    ;[(BinopC s l r) (binop s (interp l funs env) (interp r funs env))]
     [(IfC c t f) (match (interp c env)
                    [(BoolV #t) (interp t env)]
                    [(BoolV #f) (interp f env)])]
@@ -127,8 +119,6 @@
      [(PrimV v)
         (prim-eval v argv)])]
     ))
-
-
 
 ; top interp of the program, converts concrete syntax to a result
 
@@ -155,71 +145,76 @@
 ; helper function of for primitive application calls
 ; matches value type first, then calls further functions for exact function
 
+;; we traded a reeally large eval function for the sake of reducing duplicated codei
+;; n other helper functions and keeping amount of error messages to a minimum
 (define (prim-eval [v : Symbol] [l : (Listof Value)]) : Value
-  (match l
-    ; matches to prim real a math operation
-    [(list (NumV ln) (NumV rn)) (prim-real v ln rn)]
-    ; matches on strlen string 
-    [(list (StrV s)) (prim-strlen v s)]
-    [(list (StrV s) (NumV start) (NumV stop)) (prim-substring s start stop)]
-    ['() (prim-bool-lit v)]
+  (match (list v l)
+    [(list 'true '()) (BoolV #t)]
+    [(list 'false '()) (BoolV #f)]
+    [(list '+ (list (NumV l) (NumV r))) (NumV (+ l r))]
+    [(list '- (list (NumV l) (NumV r))) (NumV (- l r))]
+    [(list '* (list (NumV l) (NumV r))) (NumV (* l r))]
+    [(list '/ (list (NumV l) (NumV r))) (cond
+                                            [(zero? r)
+                                             (error '/ "DRMG division by zero, got ~e ~e" l r)]
+                                            [else (NumV (/ l r))])]
+    [(list '<= (list (NumV l) (NumV r))) (BoolV (<= l r))]
+    [(list 'strlen (list (StrV s))) (NumV (string-length s))]
+    [(list 'substring (list (StrV s) (NumV start) (NumV stop)))
+     (cond [(and
+             (exact-nonnegative-integer? start)
+             (exact-nonnegative-integer? stop)
+             (<= start stop) (<= stop (string-length s)))
+            (StrV (substring s start stop))] 
+           [else
+            (error 'prim-substring "DRMG bad substring arguments, got ~e ~e for ~e" start stop s)]
+           )]
+    [(list 'equal? (list l r)) (BoolV (equal? l r))]
+
     [_ (error 'prim-eval "DRMG primitive ~a got wrong arguments, got ~e" v l)]
     ))
 
 ; helper function to evaluate primitive functions with zero arguments, only booleans right now
 
-(define (prim-bool-lit [s : Symbol]) : Value
-  (match s
-    ['true (BoolV #t)]
-    ['false (BoolV #f)]
-    [_ (error 'prim-bool-lit "DRMG got wrong arguments, got ~e" s)]
-    ))
-
+;(define (prim-bool-lit [b : Boolean] [l : (Listof Value)]) : Value
+;  (match l
+;    ['() (BoolV b)]
+;    [_ (error 'prim-bool-lit "DRMG got wrong arguments, got ~e" l)]
+;    ))
 
 ; helper function to evaluate primitive functions with two real arguments
 
-(define (prim-real [s : Symbol] [l : Real] [r : Real]) : Value
-  (match s
-    ['+ (NumV (+ l r))]
-    ['- (NumV (- l r))]
-    ['* (NumV (* l r))]
-    ['/ (cond
-          [(zero? r) (error '/ "DRMG division by zero, got ~e ~e" l r)]
-          [else (NumV (/ l r))])]
-    ['<= (BoolV (<= l r))]
-    [_ (error 'prim-real "DRMG got wrong arguments, got ~e" s)]
-    ))
-
+;(define (prim-real [s : Symbol] [l : Real] [r: Real]) : Value
+;  (match s
+;    ['+ (NumV (+ l r))]
+;    ['- (NumV (- l r))]
+;    ['* (NumV (* l r))]
+;    ['/ (cond
+;          [(zero? r) (error '/ "DRMG division by zero, got ~e ~e" l r)]
+;          [else (NumV (/ l r))])]
+;    ['<= (BoolV (<= l r))]
+;    [_ (error 'prim-real "DRMG got wrong arguments, got ~e" s)]
+;    ))
 
 ; helper function to evaluate primitive functions with one string and two real arguments
 
-(define (prim-substring [s : String] [start : Real] [stop : Real])
-  (cond [(and
-          (exact-nonnegative-integer? start)
-          (exact-nonnegative-integer? stop)
-          (<= start stop) (<= stop (string-length s)))
-         (StrV (substring s start stop))] 
-        [else (error 'prim-substring "DRMG bad substring arguments, got ~e ~e for ~e" start stop s)]
-        ))
+;(define (prim-substring [s : String] [start : Real] [stop : Real])
+;  (cond [(and
+;          (exact-nonnegative-integer? start)
+;          (exact-nonnegative-integer? stop)
+;          (<= start stop) (<= stop (string-length s)))
+;         (StrV (substring s start stop))] 
+;        [else (error 'prim-substring "DRMG bad substring arguments, got ~e ~e for ~e" start stop s)]
+;        ))
 
 ; helper function to evaluate primitive functions with one string argument, currently only strlen
 
-(define (prim-strlen [v : Symbol] [s : String]) : Value
-  (match v
-    ['strlen (NumV (string-length s))]
-    [else (error 'prim-strlen "DRMG bad strlen arguments, got ~e, not a strlen" v)]
-    ))
+;(define (prim-strlen [v : Symbol] [s : String]) : Value
+;  (match v
+;    ['strlen (NumV (string-length s))]
+;    [else (error 'prim-strlen "DRMG bad strlen arguments, got ~e, not a strlen" v)]
+;    ))
 
-
-(define (prim-eq [v : Symbol] [l1 : Any] [l2 : Any]) : BoolV
-  ; we are not to signal an error unless wrong amount of values are passed in which does not happen in this scope
-
-  ; for now this only happens as one type
-(match v
-    ['equal? (BoolV (equal? l1 l2))]
-    [else (error 'prim-eq "DRMG bad equal? arguments, got ~e, not a equal? " v)]
-    )
-)
 
 
 ; finds the parameters to substitute in the environment
@@ -244,18 +239,15 @@
     [(BoolV #t) "true"]
     [(StrV s) (~v s)]
     [(BoolV #f) "false"]
-    ;[(StrV s) (~v s)]
-    ;[(FunV p b) (~v p b)]
     ))
 
 ;test cases for serialize
 (check-equal? (serialize (NumV 34)) "34")
 (check-equal? (serialize (BoolV true)) "true")
 (check-equal? (serialize (BoolV #f)) "false")
-;(check-equal? (serialize (StrV "Hello")) "\"Hello\"")
-;(check-equal? (serialize (CloV (list 'a) 'a (Env (list (Binding 'a 3))))) "#<procedure>")
-;(check-equal? (serialize (PrimV '+)) "#<primop>")
-;(check-equal? (serialize (FunV (list 'a) 'a)) "'(a) 'a")
+(check-equal? (serialize (StrV "Hello")) "\"Hello\"")
+(check-equal? (serialize (CloV (list 'a) 'a (Env (list (Binding 'a (NumV 3)))))) "#<procedure>")
+(check-equal? (serialize (PrimV '+)) "#<primop>")
 
 
 ;test cases for parse
@@ -283,6 +275,9 @@
 (check-exn (regexp (regexp-quote "parse: DRMG duplicate lambda parameters, got '(a a)"))
            (lambda () (parse '{% a a -> {+ a a}})))
 
+(check-exn (regexp (regexp-quote "parse: DRMG invalid symbol, got 'if"))
+           (lambda () (parse '{if {<= 3 0} {+ 3 1}})))
+
 
 ;test cases for interp
 (check-equal? (interp (AppC '- (list 3 4)) top-env) (NumV -1))
@@ -295,9 +290,6 @@
 
 (check-exn (regexp (regexp-quote "DRMG division by zero"))
            (lambda () (interp (parse '{/ 12 0}) top-env)))
-
-;(check-exn (regexp (regexp-quote "DRMG division by zero"))
- ;          (lambda () (interp (AppC '+ (list 3 4)) top-env)))
 
 (check-exn (regexp (regexp-quote "DRMG"))
            (lambda () (interp (parse '{+ 1 "hi"}) top-env)))
@@ -358,8 +350,13 @@
 
 (check-equal? (top-interp '{substring "hello" 1 3}) "\"el\"")
 (check-equal? (top-interp '{strlen "hello"}) "5")
-;(check-equal? (top-interp '{equal? "hello" "hello"}) "true")
-;(check-equal? (top-interp '{equal? "hello" "hullo"}) "false")
+
+(check-equal? (top-interp '{equal? "hello" "hello"}) "true")
+(check-equal? (top-interp '{equal? "hello" "hullo"}) "false")
+(check-equal? (top-interp '{equal? 3 3}) "true")
+(check-equal? (top-interp '{equal? 3 4}) "false")
+(check-equal? (top-interp '{equal? 3 "hello"}) "false")
+
 ;error messages in primitives
 
 (check-exn
@@ -371,13 +368,13 @@
  (lambda () (top-interp '{substring "" 0 2})))
 
 (check-exn
- (regexp (regexp-quote "prim-strlen: DRMG bad strlen arguments, got 'substring, not a strlen"))
+ (regexp (regexp-quote "prim-eval: DRMG primitive substring got wrong arguments"))
  (lambda () (top-interp '{substring "hello"})))
 
 (check-exn
- (regexp (regexp-quote "prim-real: DRMG got wrong arguments, got 'substring"))
+ (regexp (regexp-quote "prim-eval: DRMG primitive substring got wrong arguments"))
  (lambda () (top-interp '{substring 0 2})))
 
 (check-exn
- (regexp (regexp-quote "prim-bool-lit: DRMG got wrong arguments, got 'substring"))
+ (regexp (regexp-quote "prim-eval: DRMG primitive substring got wrong arguments, got '()"))
  (lambda () (top-interp '{substring}))) 
