@@ -154,7 +154,12 @@
 
 (define (prim-eval [v : Symbol] [l : (Listof Value)]) : Value
   (match l
+    ; matches to prim real a math operation
     [(list (NumV ln) (NumV rn)) (prim-real v ln rn)]
+    ; matches on strlen string 
+    [(list (StrV s)) (if (equal? v 'strlen)
+                         (prim-strlen s)
+                         (error v "DRMG primitive ~a got wrong arguments, got ~e" v l))]
     [(list (StrV s) (NumV start) (NumV stop)) (prim-substring s start stop)]
     ['() (prim-bool-lit v)]
      [_ (error v "DRMG primitive ~a got wrong arguments, got ~e" v l)]
@@ -185,6 +190,15 @@
    (StrV (substring s start stop)) 
     (error 'substring "DRMG bad substring arguments, got ~e ~e for ~e" start stop s)
 ))
+
+(define (prim-strlen [s : String]) : Value
+  [match s
+    [(? string? s) (NumV (string-length s))]
+    [else (error 'strlen "DRMG bad strlen arguments, got ~e, not a string " s)]
+    ]
+  )
+
+
 
 ; finds the parameters to substitute in the environment
 
@@ -314,5 +328,5 @@
                                        {% f -> {% a -> {f a}}}}}
                             {% n1 -> {% n2 -> {% f -> {% a -> {{n1 f} {{n2 f} a}}}}}}}) "16")
 (check-equal? (top-interp '{substring "hello" 1 3}) "\"el\"")
-
+(check-equal? (top-interp '{strlen "hello"}) "5")
 
