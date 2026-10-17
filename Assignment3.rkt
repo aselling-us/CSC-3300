@@ -1,4 +1,4 @@
-#lang typed/racket
+ #lang typed/racket
 
 (require typed/rackunit)
 
@@ -36,15 +36,18 @@
 (define (parse [s : Sexp]) : ExprC
   (match s
     [(? real? s) s]
-    [(? symbol? s) s]
+    [(? symbol? s) (cond [(or
+                           (equal? s '+) (equal? s '-) (equal? s '*) (equal? s '/)
+                           (equal? s 'ifleq0?) (equal? s '->) (equal? s '=))
+                          (error 'parse "DRMG invalid symbol, got ~e" s)]
+                         [else s])]
     [(list '+ a b) (BinopC '+ (parse a) (parse b))]
     [(list '- a b) (BinopC '- (parse a) (parse b))]
     [(list '* a b) (BinopC '* (parse a) (parse b))]
     [(list '/ a b) (BinopC '/ (parse a) (parse b))]
     ;[(list (and (? symbol?) (or '+ '- '* '/)) a b) (BinopC (cast (first s) OpC) (parse a) (parse b))]
     [(list 'ifleq0? a b c) (IfC (parse a) (parse b) (parse c))]
-    [(list (? symbol? s) a ...) (cond [(not (eq? s '->)) (AppC s (map parse a))]
-                                      [else (error 'parse "DRMG invalid id, got ~e" s)])]))
+    [(list (? symbol? s) a ...) (AppC (cast (parse s) Symbol) (map parse a))]))
 
 
 ;parses concrete syntax for function definitions and returns the abstract syntax
@@ -55,7 +58,7 @@
      (cond
        [(symbol-dup? (cast p (Listof Symbol)))
         (error 'parse-fundef "DRMG duplicate parameters, got ~e" p)]
-       [else (FundefC s (cast p (Listof Symbol)) (parse b))])]
+       [else (FundefC (cast (parse s) Symbol) (cast p (Listof Symbol)) (parse b))])]
     [other (error 'parse-fundef "DRMG not a function, got ~e" s)]))
 
 
@@ -86,8 +89,10 @@
     [(AppC f a) (match (find-fns funs f)
               [(FundefC _ p b) 
                (define argv (map (lambda ([arg : ExprC]) (interp arg funs)) a))
+               (cond [(equal? (length p) (length argv))
                (define new_body (subst p argv b))
-               (interp new_body funs)])]))
+               (interp new_body funs)]
+                     [else (error 'interp "DRMG inequal parameters and arguments")])])]))
 
 ; top interp of the program, converts concrete syntax to a result
 
@@ -160,7 +165,7 @@
 (check-equal? (parse '{ifleq0? 3 {+ 3 1} {- 3 1}})
               (IfC 3 (BinopC '+ 3 1) (BinopC '- 3 1)))
 (check-equal? (parse '{five}) (AppC 'five '()))
-(check-exn (regexp (regexp-quote "parse: DRMG invalid id, got '->"))
+(check-exn (regexp (regexp-quote "parse: DRMG invalid symbol, got '->"))
            (lambda () (parse '{-> 3 4})))
 
 ;test cases for parse-fundef
@@ -201,6 +206,9 @@
 (check-exn
  (regexp(regexp-quote "interp: DRMG unknown symbol in expression"))
  (lambda () (interp-fns (list (FundefC 'main '() (BinopC '+ 'a 3))))))
+(check-exn
+ (regexp(regexp-quote "interp: DRMG inequal parameters and arguments"))
+ (lambda () (top-interp '((f x = (+ x 2)) (main = (f 3 4 5))))))
 
 (check-equal? (interp-fns (list (FundefC 'pow (list 'a 'b) (IfC 'b 1
                                               (AppC 'pow (list 'a (BinopC '- 'b 1)))))
@@ -212,7 +220,7 @@
 (check-equal? (subst (list 'x 'y) (list 5 2) (BinopC '* 'x 'y)) (BinopC '* 5 2))
 ; param synbol not exist
 (check-exn (regexp (regexp-quote "find-param: DRMG symbol not found"))
-           (lambda () (subst (list 'x 'y) (list 5 10) (BinopC '+ 'x 'z))))
+           (lambda () (subst (list 'x 'y) (list 5 10) (BinopC '+ 'x 'z)))) 
 
 ; substr ifC
 (check-equal? (subst (list 'x) (list 0) (IfC 'x 10 20)) (IfC 0 10 20))
