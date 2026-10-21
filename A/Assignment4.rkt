@@ -4,8 +4,6 @@
 
 ;Full project implemented
 
-;(struct NumC ([n : Real]) #:transparent)
-
 (struct BinopC ([o : OpC] [l : ExprC] [r : ExprC]) #:transparent)
 
 (define-type OpC (U '+ '- '* '/))
@@ -20,13 +18,9 @@
 
 (struct IfC ([c : ExprC] [t : ExprC] [f : ExprC]) #:transparent)
 
-;(struct IdC ([s : Symbol]) #:transparent)
-
 (struct AppC ([c : ExprC] [args : (Listof ExprC)]) #:transparent)
 
 (struct StrV ([s : String]) #:transparent)
-
-
 
 (define-type ExprC (U Real Boolean IfC AppC Symbol LocalC LambdaC FundefC BinopC String))
 
@@ -45,14 +39,9 @@
 ;values
 (struct NumV ([n : Real]) #:transparent)
 (struct BoolV ([b : Boolean]) #:transparent)
-
-
-
 (struct CloV ([p : (Listof Symbol)] [b : ExprC] [clo-env : Env]) #:transparent)
 (struct PrimV ([op : (U '+ '- '* '/ '<= 'substring 'strlen 'equal? 'true 'false 'error)]))
-(define-type Value (U NumV BoolV CloV PrimV StrV
-                      ))
-
+(define-type Value (U NumV BoolV CloV PrimV StrV))
 
 (define top-env (Env (list (Binding '+ (PrimV '+)) (Binding '- (PrimV '-))
                            (Binding '* (PrimV '*)) (Binding '/ (PrimV '/))
@@ -61,8 +50,8 @@
                            (Binding 'true (PrimV 'true))
                            (Binding 'false (PrimV 'false))
                            (Binding 'substring (PrimV 'substring))
-                           (Binding 'strlen (PrimV 'strlen))
-                           )))
+                           (Binding 'strlen (PrimV 'strlen)))))
+
 ;parser for expressions in DMRG3,
 ;takes in the concrete syntax (a sexp from dmrg) and returns the abstract syntax
 
@@ -71,15 +60,18 @@
     [(? real? s) s]
     [(? boolean? s) s]
     [(? string? s) s]
-    [(list '% p ... '-> b) (cond
-                             [(symbol-dup? (cast p (Listof Symbol)))
-                              (error 'parse "DRMG duplicate lambda parameters, got ~e" p)]
-                             [else
-                              (LambdaC (cast p (Listof Symbol)) (parse b))])]
-    [(list 'local (list x1 '= e1) ... 'in eb) (AppC (LambdaC (append (cast x1 (Listof Symbol)))
-                                                             (parse eb))
-                                                    (map (lambda ([arg : Sexp]) (parse arg))
-                                                         (cast e1 (Listof Sexp))))]
+    ;cast gauranteed to succeed from (? symbol? p)
+    [(list '% (? symbol? p) ... '-> b) (cond
+                                         [(symbol-dup? (cast p (Listof Symbol)))
+                                          (error 'parse "DRMG duplicate lambda parameters, got ~e" p)]
+                                         [else
+                                          (LambdaC (cast p (Listof Symbol)) (parse b))])]
+    ;cast gauranteed to succeed from (? symbol? x1) and e1 needs to be cast because it's (listof Any)
+    [(list 'local (list (? symbol? x1) '= e1) ... 'in eb)
+     (AppC (LambdaC (append (cast x1 (Listof Symbol)))
+                    (parse eb))
+           (map (lambda ([arg : Sexp]) (parse arg))
+                (cast e1 (Listof Sexp))))]
     [(list 'if a b c) (IfC (parse a) (parse b) (parse c))]
     [(? symbol? s) (cond [(or
                            (equal? s 'if) (equal? s '->) (equal? s '=)
@@ -87,12 +79,7 @@
                           (error 'parse "DRMG invalid symbol, got ~e" s)]
                          [else s])]
     [(list s a ...) (AppC (parse s) (map parse a))]
-    ;[_ (error 'parse "DRMG got wrong arguments, got ~e" s)]
-    ))
-
-
-
-
+    [_ (error 'parse "DRMG got wrong arguments, got ~e" s)]))
 
 ; uses the list of funs to interpret all the expressions
 
@@ -110,15 +97,15 @@
      (define funval (interp f env))
      (define argv (map (lambda ([arg : ExprC]) (interp arg env)) a))
      (match funval
-    [(CloV p b clo-env)
+       [(CloV p b clo-env)
         (cond [(not (equal? (length p) (length argv)))
-            (error 'interp "DRMG inequal parameters and arguments")]
-           [else
-        (define new-env (extend-env clo-env p argv))
-        (interp b new-env)])]
-     [(PrimV v)
-        (prim-eval v argv)])]
-    ))
+               (error 'interp "DRMG inequal parameters and arguments")]
+              [else
+               (define new-env (extend-env clo-env p argv))
+               (interp b new-env)])]
+       [(PrimV v)
+        (prim-eval v argv)]
+       [_ (error 'interp "DRMG got wrong funval, got ~e" funval)])]))
 
 ; top interp of the program, converts concrete syntax to a result
 
@@ -132,21 +119,19 @@
 (define (symbol-dup? [l : (Listof Symbol)]) : Boolean
   (match l
     ['() #f]
-    [(cons f r) (or (and (not (empty? r)) (eq? f (first r))) (symbol-dup? r))]
-    ))
+    [(cons f r) (or (and (not (empty? r)) (eq? f (first r))) (symbol-dup? r))]))
 
 ;adds new bindings to the environment
 
 (define (extend-env [env : Env] [p : (Listof Symbol)] [r : (Listof Value)]) : Env
   (match env
-    [(Env b) (Env (append (map (lambda(a b) (Binding a b)) p r) b))]
-    ))
+    [(Env b) (Env (append (map (lambda(a b) (Binding a b)) p r) b))]))
 
 ; helper function of for primitive application calls
 ; matches value type first, then calls further functions for exact function
+;; we traded a reeally large eval function for the sake of reducing duplicated code in
+;; other helper functions and keeping amount of error messages to a minimum
 
-;; we traded a reeally large eval function for the sake of reducing duplicated codei
-;; n other helper functions and keeping amount of error messages to a minimum
 (define (prim-eval [v : Symbol] [l : (Listof Value)]) : Value
   (match (list v l)
     [(list 'true '()) (BoolV #t)]
@@ -171,50 +156,7 @@
            )]
     [(list 'equal? (list l r)) (BoolV (equal? l r))]
 
-    [_ (error 'prim-eval "DRMG primitive ~a got wrong arguments, got ~e" v l)]
-    ))
-
-; helper function to evaluate primitive functions with zero arguments, only booleans right now
-
-;(define (prim-bool-lit [b : Boolean] [l : (Listof Value)]) : Value
-;  (match l
-;    ['() (BoolV b)]
-;    [_ (error 'prim-bool-lit "DRMG got wrong arguments, got ~e" l)]
-;    ))
-
-; helper function to evaluate primitive functions with two real arguments
-
-;(define (prim-real [s : Symbol] [l : Real] [r: Real]) : Value
-;  (match s
-;    ['+ (NumV (+ l r))]
-;    ['- (NumV (- l r))]
-;    ['* (NumV (* l r))]
-;    ['/ (cond
-;          [(zero? r) (error '/ "DRMG division by zero, got ~e ~e" l r)]
-;          [else (NumV (/ l r))])]
-;    ['<= (BoolV (<= l r))]
-;    [_ (error 'prim-real "DRMG got wrong arguments, got ~e" s)]
-;    ))
-
-; helper function to evaluate primitive functions with one string and two real arguments
-
-;(define (prim-substring [s : String] [start : Real] [stop : Real])
-;  (cond [(and
-;          (exact-nonnegative-integer? start)
-;          (exact-nonnegative-integer? stop)
-;          (<= start stop) (<= stop (string-length s)))
-;         (StrV (substring s start stop))] 
-;        [else (error 'prim-substring "DRMG bad substring arguments, got ~e ~e for ~e" start stop s)]
-;        ))
-
-; helper function to evaluate primitive functions with one string argument, currently only strlen
-
-;(define (prim-strlen [v : Symbol] [s : String]) : Value
-;  (match v
-;    ['strlen (NumV (string-length s))]
-;    [else (error 'prim-strlen "DRMG bad strlen arguments, got ~e, not a strlen" v)]
-;    ))
-
+    [_ (error 'prim-eval "DRMG primitive ~a got wrong arguments, got ~e" v l)]))
 
 
 ; finds the parameters to substitute in the environment
@@ -226,11 +168,11 @@
                                [(Binding p e) (cond
                                                 [(equal? p s) e]
                                                 [else (find-param-env s (Env b2))])])]
-               ['() (error 'find-param-env "DRMG symbol not found")])]
-    ))
+               ['() (error 'find-param-env "DRMG symbol not found")])]))
 
 
 ; converts values to a string, mainly for testing
+
 (define (serialize [v : Value]) : String
   (match v
     [(CloV p b c) "#<procedure>"]
@@ -238,8 +180,7 @@
     [(NumV n) (~v n)]
     [(BoolV #t) "true"]
     [(StrV s) (~v s)]
-    [(BoolV #f) "false"]
-    ))
+    [(BoolV #f) "false"]))
 
 ;test cases for serialize
 (check-equal? (serialize (NumV 34)) "34")
@@ -287,37 +228,27 @@
 (check-equal? (interp (IfC (AppC '<= (list -1 0)) 2 0) top-env) (NumV 2))
 (check-equal? (interp #t top-env) (BoolV #t))
 (check-equal? (interp (LambdaC (list 'a) 3) top-env) (CloV (list 'a) 3 top-env))
-
 (check-exn (regexp (regexp-quote "DRMG division by zero"))
            (lambda () (interp (parse '{/ 12 0}) top-env)))
-
 (check-exn (regexp (regexp-quote "DRMG"))
            (lambda () (interp (parse '{+ 1 "hi"}) top-env)))
-
 (check-equal? (serialize (interp (parse "hello") top-env))  "\"hello\"")
-
 (check-equal? (interp (parse "\"hello\"") top-env)
               (StrV "\"hello\""))
-
 (check-equal? (interp  "hi" top-env) (StrV "hi"))
-
 (check-equal? (serialize (interp (LambdaC (list 'a) 3) top-env)) "#<procedure>")
 
 ;func within func
 (check-equal? (interp (AppC (LambdaC (list 'x 'y) (AppC '+ (list 'x 'y)))
                             (list (AppC '+ (list 1 2)) 5)) top-env) (NumV 8))
-
 (check-equal? (interp (AppC (LambdaC (list 'x 'y) (AppC '+ (list 'x 'y)))
                             (list 3 4)) top-env) (NumV 7))
-
 (check-exn
  (regexp (regexp-quote "interp: DRMG inequal parameters and arguments"))
  (lambda () (top-interp '{{% x -> {+ x 2}} 3 4 5})))
-
 (check-equal? (interp (AppC (LambdaC (list 'x) (AppC 'x (list 4)))
                             (list (LambdaC (list 'a) (AppC '+ (list 'a 7))))) top-env)
               (NumV 11))
-
 (check-exn
  (regexp(regexp-quote "find-param-env: DRMG symbol not found"))
  (lambda () (interp (AppC (LambdaC (list 'x 'y) (AppC '+ (list 'x 'z)))
@@ -347,34 +278,54 @@
                             {% n1 -> {% n2 -> {% f -> {% a -> {{n1 f} {{n2 f} a}}}}}}}) "16")
 (check-equal? (top-interp '{substring "hello" 1 3}) "\"el\"")
 (check-equal? (top-interp '{strlen "hello"}) "5")
-
 (check-equal? (top-interp '{substring "hello" 1 3}) "\"el\"")
 (check-equal? (top-interp '{strlen "hello"}) "5")
-
 (check-equal? (top-interp '{equal? "hello" "hello"}) "true")
 (check-equal? (top-interp '{equal? "hello" "hullo"}) "false")
 (check-equal? (top-interp '{equal? 3 3}) "true")
 (check-equal? (top-interp '{equal? 3 4}) "false")
 (check-equal? (top-interp '{equal? 3 "hello"}) "false")
+(check-exn
+ (regexp (regexp-quote "interp: DRMG got wrong funval, got (BoolV #f)")) 
+ (lambda () (top-interp '{{equal? 3 "hello"}})))
+(check-exn
+ (regexp (regexp-quote "parse: DRMG invalid symbol, got '%")) 
+ (lambda () (top-interp ''{local 
+                             [f = {% 3 -> {+ {* 3 3} {+ {* 4 3} 4}}}]
+                             in
+                             {f 7}})))
+(check-exn
+ (regexp (regexp-quote "parse: DRMG got wrong arguments, got '()")) 
+ (lambda () (top-interp '{})))
 
 ;error messages in primitives
 
 (check-exn
  (regexp (regexp-quote "prim-eval: DRMG primitive strlen got wrong arguments, got (list (NumV 5))")) 
  (lambda () (top-interp '{strlen 5})))
-
 (check-exn
  (regexp (regexp-quote "prim-substring: DRMG bad substring arguments, got 0 2 for \"\""))
  (lambda () (top-interp '{substring "" 0 2})))
-
 (check-exn
  (regexp (regexp-quote "prim-eval: DRMG primitive substring got wrong arguments"))
  (lambda () (top-interp '{substring "hello"})))
-
 (check-exn
  (regexp (regexp-quote "prim-eval: DRMG primitive substring got wrong arguments"))
  (lambda () (top-interp '{substring 0 2})))
-
+(check-exn
+ (regexp (regexp-quote "prim-eval: DRMG primitive substring got wrong arguments"))
+ (lambda () (top-interp '{substring true 2})))
+(check-exn
+ (regexp
+  (regexp-quote
+   "prim-eval: DRMG primitive + got wrong arguments, got (list (NumV 3) (StrV \"hello\"))"))
+ (lambda () (top-interp '{+ 3 "hello"})))
 (check-exn
  (regexp (regexp-quote "prim-eval: DRMG primitive substring got wrong arguments, got '()"))
- (lambda () (top-interp '{substring}))) 
+ (lambda () (top-interp '{substring})))
+(check-exn
+ (regexp (regexp-quote "parse: DRMG invalid symbol, got '%"))
+ (lambda () (parse '(% 3 4 5 -> 6))))
+(check-exn
+ (regexp (regexp-quote "parse: DRMG invalid symbol, got '%"))
+ (lambda () (parse '((% 3 -> 6) 3))))
