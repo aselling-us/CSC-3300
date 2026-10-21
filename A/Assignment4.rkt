@@ -256,7 +256,7 @@
  (regexp(regexp-quote "find-param-env: DRMG symbol not found"))
  (lambda () (interp (AppC (LambdaC (list 'x 'y) (AppC '+ (list 'x 'z)))
                             (list 3 4)) top-env)))
-
+ 
 ;top interp
 (check-equal? (top-interp '{{% a -> {+ a 7}} 3}) "10")
 (check-equal? (top-interp '{{% a -> {true}} 3}) "true")
