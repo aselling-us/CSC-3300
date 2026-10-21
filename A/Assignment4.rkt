@@ -50,7 +50,8 @@
                            (Binding 'true (PrimV 'true))
                            (Binding 'false (PrimV 'false))
                            (Binding 'substring (PrimV 'substring))
-                           (Binding 'strlen (PrimV 'strlen)))))
+                           (Binding 'strlen (PrimV 'strlen))
+                           (Binding 'error (PrimV 'error)))))
 
 ;parser for expressions in DMRG3,
 ;takes in the concrete syntax (a sexp from dmrg) and returns the abstract syntax
@@ -155,6 +156,8 @@
             (error 'prim-substring "DRMG bad substring arguments, got ~e ~e for ~e" start stop s)]
            )]
     [(list 'equal? (list l r)) (BoolV (equal? l r))]
+    [(list 'error (list e))
+     (error 'prim-eval "DRMG user-error, got ~e" (serialize e))]
 
     [_ (error 'prim-eval "DRMG primitive ~a got wrong arguments, got ~e" v l)]))
 
@@ -329,3 +332,15 @@
 (check-exn
  (regexp (regexp-quote "parse: DRMG invalid symbol, got '%"))
  (lambda () (parse '((% 3 -> 6) 3))))
+
+(check-exn
+ (regexp (regexp-quote "prim-eval: DRMG user-error, got \"\\\"boom\\\"\""))
+ (lambda () (top-interp '{error "boom"})))
+
+(check-exn
+ (regexp (regexp-quote "prim-eval: DRMG user-error, got \"\\\"test-error\\\"\""))
+ (lambda () (top-interp '{error "test-error"})))
+
+(check-exn
+ (regexp (regexp-quote "prim-eval: DRMG user-error, got \"3\""))
+ (lambda () (top-interp '{error 3})))
