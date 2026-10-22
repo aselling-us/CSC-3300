@@ -40,8 +40,10 @@
 (struct NumV ([n : Real]) #:transparent)
 (struct BoolV ([b : Boolean]) #:transparent)
 (struct CloV ([p : (Listof Symbol)] [b : ExprC] [clo-env : Env]) #:transparent)
-(struct PrimV ([op : (U '+ '- '* '/ '<= 'substring 'strlen 'equal? 'true 'false 'error)]))
+(struct PrimV ([op : (U '+ '- '* '/ '<= 'substring 'strlen 'equal? 'true 'false 'error 'not)]))
 (define-type Value (U NumV BoolV CloV PrimV StrV))
+
+; for midterm practice, adding not primitive that reverses a truth value of a test
 
 (define top-env (Env (list (Binding '+ (PrimV '+)) (Binding '- (PrimV '-))
                            (Binding '* (PrimV '*)) (Binding '/ (PrimV '/))
@@ -51,7 +53,10 @@
                            (Binding 'false (PrimV 'false))
                            (Binding 'substring (PrimV 'substring))
                            (Binding 'strlen (PrimV 'strlen))
+                           (Binding 'not (PrimV 'not))
                            (Binding 'error (PrimV 'error)))))
+
+
 
 ;parser for expressions in DMRG3,
 ;takes in the concrete syntax (a sexp from dmrg) and returns the abstract syntax
@@ -146,6 +151,7 @@
                                             [else (NumV (/ l r))])]
     [(list '<= (list (NumV l) (NumV r))) (BoolV (<= l r))]
     [(list 'strlen (list (StrV s))) (NumV (string-length s))]
+    [(list 'not (list (BoolV b))) (BoolV (not b))]
     [(list 'substring (list (StrV s) (NumV start) (NumV stop)))
      (cond [(and
              (exact-nonnegative-integer? start)
@@ -185,7 +191,7 @@
     [(StrV s) (~v s)]
     [(BoolV #f) "false"]))
 
-;test cases for serialize
+; ------------------ test cases for serialize ------------------
 (check-equal? (serialize (NumV 34)) "34")
 (check-equal? (serialize (BoolV true)) "true")
 (check-equal? (serialize (BoolV #f)) "false")
@@ -194,7 +200,7 @@
 (check-equal? (serialize (PrimV '+)) "#<primop>")
 
 
-;test cases for parse
+; ------------------ test cases for parse ------------------
 (check-equal? (parse 3) 3)
 (check-equal? (parse #t) #t)
 (check-equal? (parse 'a) 'a)
@@ -214,6 +220,8 @@
                         {f 4}}) (AppC (LambdaC '(f) (AppC 'f '(4)))
                                       (list (LambdaC '(x) (AppC '+ (list 'x 7))))))
 (check-equal? (parse '{five}) (AppC 'five '()))
+(check-equal? (parse '{strlen "hello"}) (AppC 'strlen (list "hello")))
+
 (check-exn (regexp (regexp-quote "parse: DRMG invalid symbol, got '->"))
            (lambda () (parse '{-> 3 4})))
 (check-exn (regexp (regexp-quote "parse: DRMG duplicate lambda parameters, got '(a a)"))
@@ -223,7 +231,7 @@
            (lambda () (parse '{if {<= 3 0} {+ 3 1}})))
 
 
-;test cases for interp
+; ------------------ test cases for interp ------------------
 (check-equal? (interp (AppC '- (list 3 4)) top-env) (NumV -1))
 (check-equal? (interp (AppC '* (list 3 4)) top-env) (NumV 12))
 (check-equal? (interp (AppC '/ (list 12 4)) top-env) (NumV 3))
@@ -256,7 +264,7 @@
  (regexp(regexp-quote "find-param-env: DRMG symbol not found"))
  (lambda () (interp (AppC (LambdaC (list 'x 'y) (AppC '+ (list 'x 'z)))
                             (list 3 4)) top-env)))
- 
+
 ;top interp
 (check-equal? (top-interp '{{% a -> {+ a 7}} 3}) "10")
 (check-equal? (top-interp '{{% a -> {true}} 3}) "true")
@@ -300,6 +308,22 @@
 (check-exn
  (regexp (regexp-quote "parse: DRMG got wrong arguments, got '()")) 
  (lambda () (top-interp '{})))
+
+(check-equal? (top-interp '{not {true}}) "false")
+(check-equal? (top-interp '{not {false}}) "true")
+(check-equal? (top-interp '{not {<= 1 2}}) "false")
+(check-equal? (top-interp '{not {not {<= 1 2}}}) "true")
+
+(check-equal? (parse '{% x -> {not x}}) (LambdaC '(x) (AppC 'not (list 'x))))
+(check-equal? (top-interp '{{% x -> {not x}} {<= 1 2}}) "false")
+(check-equal? (top-interp '{{% x -> {not x}} {<= 2 1}}) "true")
+(check-exn
+ (regexp (regexp-quote "interp: DRMG inequal parameters and arguments"))
+ (lambda () (top-interp '{{% x -> {not x}}})))
+
+
+
+
 
 ;error messages in primitives
 
